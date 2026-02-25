@@ -39,10 +39,10 @@ model_multi.fit(X_multi, y_multi)
 
 # --- Sidebar Inputs ---
 days_ahead = st.sidebar.slider("Days to Predict", 1, 30, 7)
+item_cols = [c for c in X_multi.columns if "item_" in c]
 
 # --- Multi-day predictions ---
 pred_list = []
-item_cols = [c for c in X_multi.columns if "item_" in c]
 
 for day_offset in range(1, days_ahead+1):
     predict_date = pd.to_datetime(df_multi["date"].iloc[-1]) + pd.Timedelta(days=day_offset)
@@ -66,8 +66,20 @@ for day_offset in range(1, days_ahead+1):
     pred_list.append(row)
 
 pred_df = pd.DataFrame(pred_list)
+
+# --- Show predictions table ---
 st.subheader(f"Predicted Sales for Next {days_ahead} Days")
 st.dataframe(pred_df)
+
+# --- Download Predictions CSV ---
+st.subheader("Download Predictions")
+csv = pred_df.to_csv(index=False).encode('utf-8')
+st.download_button(
+    label="Download Predicted Sales as CSV",
+    data=csv,
+    file_name='predicted_sales.csv',
+    mime='text/csv'
+)
 
 # --- Individual charts for each item ---
 st.subheader("Individual Item Charts")
