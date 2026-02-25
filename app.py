@@ -4,125 +4,137 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
 
-st.title("F&B Multi-Item Sales Predictor")
+st.set_page_config(layout="wide")
+st.title("🍔 F&B Control Dashboard (MVP)")
 
-# --- Generate synthetic data inside the app ---
-days = pd.date_range(start="2025-08-01", end="2025-12-31")
-items = ["Burger", "Fries", "Drink"]
+# ===============================
+# 1️⃣ Mock Data Setup (MVP)
+# ===============================
+# Items
+items = ["Burger", "Fries", "Drink", "Chicken Wrap", "Pizza"]
 
-multi_sales = []
-for item in items:
-    for day in days:
-        base = {"Burger":20, "Fries":15, "Drink":25}[item]
-        weekend = 10 if day.weekday() >=5 else 0
-        trend = (day - days[0]).days * 0.03
-        noise = np.random.randint(-3, 4)
-        multi_sales.append({
-            "date": day,
-            "item": item,
-            "sales_qty": base + weekend + trend + noise
-        })
+# Purchase / Inventory
+purchase_data = pd.DataFrame({
+    "Ingredient": ["Beef", "Bun", "Lettuce", "Tomato", "Oil", "Cheese", "Chicken"],
+    "Qty_in_stock": [100, 200, 50, 60, 30, 40, 80],
+    "Unit_cost": [150, 20, 10, 8, 50, 25, 120]
+})
 
-df_multi = pd.DataFrame(multi_sales)
-df_multi["day_index"] = np.arange(len(df_multi))
-df_multi["day_of_week"] = df_multi["date"].dt.weekday
-df_multi["is_weekend"] = (df_multi["day_of_week"] >=5).astype(int)
-df_multi["trend"] = np.arange(len(df_multi)) * 0.03
-df_multi = pd.get_dummies(df_multi, columns=["item"])
+# Recipes
+recipes = {
+    "Burger": {"Beef": 1, "Bun": 1, "Lettuce": 0.1, "Tomato": 0.1, "Cheese": 0.2, "Oil": 0.05},
+    "Fries": {"Oil": 0.1, "Potato": 0.5},
+    "Drink": {"Syrup": 0.1, "Water": 0.3},
+    "Chicken Wrap": {"Chicken": 0.3, "Bun": 1, "Lettuce": 0.1, "Tomato": 0.1, "Oil": 0.05},
+    "Pizza": {"Cheese": 0.3, "Tomato": 0.2, "Dough": 0.5, "Oil": 0.05}
+}
 
-# --- Train model ---
-feature_cols = ["day_index","day_of_week","is_weekend","trend"] + [c for c in df_multi.columns if "item_" in c]
-X_multi = df_multi[feature_cols]
-y_multi = df_multi["sales_qty"]
-model_multi = LinearRegression()
-model_multi.fit(X_multi, y_multi)
+# Sales Log (POS)
+sales_columns = ["Date"] + items
+dates = pd.date_range(start="2026-01-01", periods=30)
+sales_log = pd.DataFrame(np.random.randint(10, 50, size=(30, len(items))), columns=items)
+sales_log.insert(0, "Date", dates)
 
-# --- Sidebar Inputs ---
-days_ahead = st.sidebar.slider("Days to Predict", 1, 30, 7)
-item_cols = [c for c in X_multi.columns if "item_" in c]
+# ===============================
+# 2️⃣ Sidebar Navigation
+# ===============================
+tab = st.sidebar.radio("Select Module", ["POS", "Inventory", "Recipes", "Profit", "Forecast"])
 
-# --- Multi-day predictions ---
-pred_list = []
+# ===============================
+# 3️⃣ POS Module
+# ===============================
+if tab == "POS":
+    st.subheader("💳 POS Terminal (MVP)")
+    order = {}
+    for item in items:
+        qty = st.number_input(f"Quantity {item}", min_value=0, value=0)
+        order[item] = qty
 
-for day_offset in range(1, days_ahead+1):
-    predict_date = pd.to_datetime(df_multi["date"].iloc[-1]) + pd.Timedelta(days=day_offset)
-    day_of_week = predict_date.weekday()
-    is_weekend = int(day_of_week >=5)
-    trend = (len(df_multi)//len(items) + day_offset -1)*0.03
+    payment = st.radio("Payment Type", ["Cash", "Card"])
 
-    row = {"Date": predict_date.date()}
-    for item_name in items:
-        input_dict = {
-            "day_index":[len(df_multi)//len(items) + day_offset - 1],
-            "day_of_week":[day_of_week],
-            "is_weekend":[is_weekend],
-            "trend":[trend]
-        }
-        for c in item_cols:
-            input_dict[c] = [1 if c==f"item_{item_name}" else 0]
-        input_df = pd.DataFrame(input_dict)[X_multi.columns]
-        pred = model_multi.predict(input_df)[0]
-        row[item_name] = round(pred)
-    pred_list.append(row)
+    if st.button("Submit Sale"):
+        new_row = {"Date": pd.Timestamp.now().normalize()}
+        for i in items:
+            new_row[i] = order[i]
+        sales_log.loc[len(sales_log)] = new_row
+        st.success("Sale recorded!")
+        # Update inventory
+        for item_name, qty in order.items():
+            if item_name in recipes:
+                for ing, amt in recipes[item_name].items():
+                    if ing in purchase_data["Ingredient"].values:
+                        purchase_data.loc[purchase_data["Ingredient"]==ing, "Qty_in_stock"] -= qty*amt
 
-pred_df = pd.DataFrame(pred_list)
+# ===============================
+# 4️⃣ Inventory Module
+# ===============================
+elif tab == "Inventory":
+    st.subheader("📦 Inventory Status")
+    st.dataframe(purchase_data, use_container_width=True)
+    low_stock = purchase_data[purchase_data["Qty_in_stock"] < 5]
+    if not low_stock.empty:
+        st.warning("⚠ Low Stock Alert!")
+        st.dataframe(low_stock)
 
-# --- Show predictions table with alerts ---
-st.subheader(f"Predicted Sales for Next {days_ahead} Days")
+# ===============================
+# 5️⃣ Recipes Module
+# ===============================
+elif tab == "Recipes":
+    st.subheader("📖 Recipe & Costing")
+    recipe_name = st.selectbox("Select Menu Item", items)
+    st.write("Ingredients:")
+    rec = recipes[recipe_name]
+    cost_total = 0
+    for ing, amt in rec.items():
+        cost = 0
+        if ing in purchase_data["Ingredient"].values:
+            unit_cost = purchase_data.loc[purchase_data["Ingredient"]==ing, "Unit_cost"].values[0]
+            cost = unit_cost * amt
+        st.write(f"{ing}: {amt} unit(s) → Cost: {cost:.2f} ETB")
+        cost_total += cost
+    st.write(f"**Total Cost per {recipe_name}: {cost_total:.2f} ETB**")
 
-# Define thresholds for alerts
-high_threshold = 50  # sales above this are high
-low_threshold = 10   # sales below this are low
+# ===============================
+# 6️⃣ Profit Module
+# ===============================
+elif tab == "Profit":
+    st.subheader("💰 Profit Dashboard")
+    sales_log["Total_sales"] = sales_log[items].sum(axis=1)
+    # Assume simple cost: sum of recipe costs * quantity sold
+    daily_profit = []
+    for idx, row in sales_log.iterrows():
+        profit = 0
+        for item_name in items:
+            qty = row[item_name]
+            rec = recipes.get(item_name, {})
+            cost = sum([purchase_data.loc[purchase_data["Ingredient"]==ing, "Unit_cost"].values[0]*amt for ing, amt in rec.items()])
+            profit += (qty * cost * 1.5) - (qty * cost)  # Simple 50% markup
+        daily_profit.append(profit)
+    sales_log["Profit"] = daily_profit
+    st.line_chart(sales_log.set_index("Date")[["Total_sales", "Profit"]])
 
-# Function to color cells
-def highlight_sales(val):
-    if val >= high_threshold:
-        color = 'lightgreen'
-    elif val <= low_threshold:
-        color = 'lightcoral'
-    else:
-        color = ''
-    return f'background-color: {color}'
-
-# Style table with alerts
-styled_pred_df = pred_df.style.applymap(highlight_sales, subset=items)
-st.dataframe(styled_pred_df)
-
-# --- Download Predictions CSV ---
-st.subheader("Download Predictions")
-csv = pred_df.to_csv(index=False).encode('utf-8')
-st.download_button(
-    label="Download Predicted Sales as CSV",
-    data=csv,
-    file_name='predicted_sales.csv',
-    mime='text/csv'
-)
-
-# --- Individual charts for each item ---
-st.subheader("Individual Item Charts")
-for item in items:
-    st.write(f"**{item} Sales**")
-    plt.figure(figsize=(8,3))
-    col_name = f"item_{item}"
-    item_df = df_multi[df_multi[col_name]==1].copy()
-    plt.plot(item_df["date"], item_df["sales_qty"], label="Past Sales")
-    plt.plot(pred_df["Date"], pred_df[item], label="Predicted Sales", linestyle="--")
-    plt.title(f"{item} Sales")
-    plt.xlabel("Date")
-    plt.ylabel("Sales Qty")
+# ===============================
+# 7️⃣ Forecast Module
+# ===============================
+elif tab == "Forecast":
+    st.subheader("📈 Sales Prediction (MVP)")
+    # Simple linear regression using past 30 days
+    X = np.arange(len(sales_log)).reshape(-1,1)
+    preds = {}
+    for item in items:
+        y = sales_log[item].values
+        model = LinearRegression()
+        model.fit(X, y)
+        future_days = 7
+        X_future = np.arange(len(X), len(X)+future_days).reshape(-1,1)
+        y_pred = model.predict(X_future)
+        preds[item] = np.round(y_pred)
+    pred_df = pd.DataFrame(preds)
+    pred_df["Date"] = pd.date_range(start=sales_log["Date"].max()+pd.Timedelta(days=1), periods=future_days)
+    st.dataframe(pred_df, use_container_width=True)
+    # Combined chart
+    for item in items:
+        plt.plot(pred_df["Date"], pred_df[item], label=item)
     plt.legend()
+    plt.title("7-Day Sales Forecast")
     st.pyplot(plt)
-
-# --- Combined chart ---
-st.subheader("All Items Combined Chart")
-plt.figure(figsize=(8,4))
-for item in items:
-    col_name = f"item_{item}"
-    item_df = df_multi[df_multi[col_name]==1]
-    plt.plot(item_df["date"], item_df["sales_qty"], label=f"{item} Past Sales")
-    plt.plot(pred_df["Date"], pred_df[item], linestyle="--", label=f"{item} Predicted")
-plt.title("Multi-Item Past + Predicted Sales")
-plt.xlabel("Date")
-plt.ylabel("Sales Quantity")
-plt.legend()
-st.pyplot(plt)
