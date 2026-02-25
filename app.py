@@ -67,9 +67,26 @@ for day_offset in range(1, days_ahead+1):
 
 pred_df = pd.DataFrame(pred_list)
 
-# --- Show predictions table ---
+# --- Show predictions table with alerts ---
 st.subheader(f"Predicted Sales for Next {days_ahead} Days")
-st.dataframe(pred_df)
+
+# Define thresholds for alerts
+high_threshold = 50  # sales above this are high
+low_threshold = 10   # sales below this are low
+
+# Function to color cells
+def highlight_sales(val):
+    if val >= high_threshold:
+        color = 'lightgreen'
+    elif val <= low_threshold:
+        color = 'lightcoral'
+    else:
+        color = ''
+    return f'background-color: {color}'
+
+# Style table with alerts
+styled_pred_df = pred_df.style.applymap(highlight_sales, subset=items)
+st.dataframe(styled_pred_df)
 
 # --- Download Predictions CSV ---
 st.subheader("Download Predictions")
