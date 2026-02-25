@@ -38,37 +38,61 @@ model_multi = LinearRegression()
 model_multi.fit(X_multi, y_multi)
 
 # --- Sidebar Inputs ---
-day_offset = st.sidebar.slider("Days Ahead",1,30,1)
-item_name = st.sidebar.selectbox("Select Item", items)
+days_ahead = st.sidebar.slider("Days to Predict", 1, 30, 7)
 
-# --- Prepare prediction input ---
-predict_date = pd.to_datetime(df_multi["date"].iloc[-1]) + pd.Timedelta(days=day_offset)
-day_of_week = predict_date.weekday()
-is_weekend = int(day_of_week>=5)
-trend = (len(df_multi)//len(items) + day_offset -1)*0.03
-
+# --- Multi-day predictions ---
+pred_list = []
 item_cols = [c for c in X_multi.columns if "item_" in c]
-input_dict = {
-    "day_index":[len(df_multi)//len(items)+day_offset-1],
-    "day_of_week":[day_of_week],
-    "is_weekend":[is_weekend],
-    "trend":[trend]
-}
-for c in item_cols:
-    input_dict[c] = [1 if c==f"item_{item_name}" else 0]
 
-input_df = pd.DataFrame(input_dict)[X_multi.columns]
-pred = model_multi.predict(input_df)[0]
+for day_offset in range(1, days_ahead+1):
+    predict_date = pd.to_datetime(df_multi["date"].iloc[-1]) + pd.Timedelta(days=day_offset)
+    day_of_week = predict_date.weekday()
+    is_weekend = int(day_of_week >=5)
+    trend = (len(df_multi)//len(items) + day_offset -1)*0.03
 
-st.write(f"Predicted sales for **{item_name}** on {predict_date.date()}: **{pred:.0f}**")
+    row = {"Date": predict_date.date()}
+    for item_name in items:
+        input_dict = {
+            "day_index":[len(df_multi)//len(items) + day_offset - 1],
+            "day_of_week":[day_of_week],
+            "is_weekend":[is_weekend],
+            "trend":[trend]
+        }
+        for c in item_cols:
+            input_dict[c] = [1 if c==f"item_{item_name}" else 0]
+        input_df = pd.DataFrame(input_dict)[X_multi.columns]
+        pred = model_multi.predict(input_df)[0]
+        row[item_name] = round(pred)
+    pred_list.append(row)
 
-# --- Plot multi-item chart ---
+pred_df = pd.DataFrame(pred_list)
+st.subheader(f"Predicted Sales for Next {days_ahead} Days")
+st.dataframe(pred_df)
+
+# --- Individual charts for each item ---
+st.subheader("Individual Item Charts")
+for item in items:
+    st.write(f"**{item} Sales**")
+    plt.figure(figsize=(8,3))
+    col_name = f"item_{item}"
+    item_df = df_multi[df_multi[col_name]==1].copy()
+    plt.plot(item_df["date"], item_df["sales_qty"], label="Past Sales")
+    plt.plot(pred_df["Date"], pred_df[item], label="Predicted Sales", linestyle="--")
+    plt.title(f"{item} Sales")
+    plt.xlabel("Date")
+    plt.ylabel("Sales Qty")
+    plt.legend()
+    st.pyplot(plt)
+
+# --- Combined chart ---
+st.subheader("All Items Combined Chart")
 plt.figure(figsize=(8,4))
 for item in items:
     col_name = f"item_{item}"
     item_df = df_multi[df_multi[col_name]==1]
-    plt.plot(item_df["date"], item_df["sales_qty"], label=f"{item} Sales")
-plt.title("Multi-Item Daily Sales")
+    plt.plot(item_df["date"], item_df["sales_qty"], label=f"{item} Past Sales")
+    plt.plot(pred_df["Date"], pred_df[item], linestyle="--", label=f"{item} Predicted")
+plt.title("Multi-Item Past + Predicted Sales")
 plt.xlabel("Date")
 plt.ylabel("Sales Quantity")
 plt.legend()
